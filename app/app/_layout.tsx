@@ -1,3 +1,4 @@
+import { registerForPushNotificationsAsync, savePushToken } from '@/lib/notifications';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/authStore';
 import { Slot, useRouter, useSegments } from 'expo-router';
@@ -17,6 +18,24 @@ export default function RootLayout() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!session?.user.id) return;
+
+    let cancelled = false;
+
+    const registerDevice = async () => {
+      const pushToken = await registerForPushNotificationsAsync();
+      if (!pushToken || cancelled) return;
+      await savePushToken(session.user.id, pushToken);
+    };
+
+    registerDevice();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user.id]);
 
   useEffect(() => {
     const inAuthGroup = segments[0] === '(auth)';

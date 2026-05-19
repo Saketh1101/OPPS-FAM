@@ -17,6 +17,11 @@
       "bundleIdentifier": "com.otpshare.app"
     },
     "android": {
+      "package": "com.otpshare.app",
+      "permissions": [
+        "android.permission.RECEIVE_SMS",
+        "android.permission.READ_SMS"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",

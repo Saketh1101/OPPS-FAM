@@ -1,10 +1,151 @@
-import { View, Text } from 'react-native';
+import OTPCard from '@/components/OTPCard';
+import { decryptOTP } from '@/lib/crypto';
+import { requestSMSPermission, startSMSListener, stopSMSListener } from '@/lib/smsService';
+import { supabase } from '@/lib/supabase';
+import { OTP } from '@/lib/types';
+import { useAuthStore } from '@/store/authStore';
+import { useGroupStore } from '@/store/groupStore';
+import { useOTPStore } from '@/store/otpStore';
+import { useEffect, useRef } from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  Platform,
+  Text,
+  View,
+} from 'react-native';
 
-// Full implementation coming in Phase 5
 export default function FeedScreen() {
+  const { session } = useAuthStore();
+  const { group } = useGroupStore();
+  const { otps, addOTP, removeOTP, setOTPs } = useOTPStore();
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+
+  useEffect(() => {
+    if (!group) return;
+    loadInitialOTPs();
+    subscribeToOTPs();
+    setupSMSListener();
+    return () => {
+      channelRef.current?.unsubscribe();
+      stopSMSListener();
+    };
+  }, [group?.id]);
+
+  const setupSMSListener = async () => {
+    if (Platform.OS !== 'android' || !session) return;
+    const granted = await requestSMSPermission();
+    if (!granted) return;
+    startSMSListener({ groupId: group!.id, userId: session.user.id });
+  };
+
+  const decryptAndEnrich = async (raw: any): Promise<OTP> => {
+    const otp_code = await decryptOTP(raw.encrypted_otp, group!.id);
+    return { ...raw, otp_code };
+  };
+
+  const loadInitialOTPs = async () => {
+    const now = new Date().toISOString();
+    const { data } = await supabase
+      .from('otps')
+      .select('*, profiles:sender_user_id(id, display_name, phone)')
+      .eq('group_id', group!.id)
+      .gt('expires_at', now)
+      .order('received_at', { ascending: false })
+      .limit(20);
+
+    if (!data) return;
+
+    const enriched = await Promise.all(
+      data.map(async (row) => ({
+        ...(await decryptAndEnrich(row)),
+        sender_profile: row.profiles,
+      }))
+    );
+    setOTPs(enriched);
+
+    // Log views for loaded OTPs
+    if (session) {
+      const viewRows = enriched.map((o) => ({
+        otp_id: o.id,
+        viewer_id: session.user.id,
+      }));
+      await supabase.from('otp_views').upsert(viewRows, { onConflict: 'otp_id,viewer_id', ignoreDuplicates: true });
+    }
+  };
+
+  const subscribeToOTPs = () => {
+    channelRef.current = supabase
+      .channel(`otps:${group!.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'otps',
+          filter: `group_id=eq.${group!.id}`,
+        },
+        async (payload) => {
+          const raw = payload.new as any;
+          // Fetch sender profile
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('id, display_name, phone')
+            .eq('id', raw.sender_user_id)
+            .single();
+
+          const enriched: OTP = {
+            ...(await decryptAndEnrich(raw)),
+            sender_profile: profile as any ?? undefined,
+          };
+          addOTP(enriched);
+
+          // Log view
+          if (session) {
+            await supabase.from('otp_views').upsert(
+              [{ otp_id: enriched.id, viewer_id: session.user.id }],
+              { onConflict: 'otp_id,viewer_id', ignoreDuplicates: true }
+            );
+          }
+        }
+      )
+      .subscribe();
+  };
+
+  if (!group) {
+    return (
+      <View className="flex-1 bg-gray-50 items-center justify-center px-8">
+        <Text className="text-2xl font-bold text-gray-900 mb-2 text-center">No group yet</Text>
+        <Text className="text-gray-500 text-center">
+          Go to the Group tab to create or join a family group.
+        </Text>
+      </View>
+    );
+  }
+
   return (
-    <View className="flex-1 bg-gray-50 items-center justify-center">
-      <Text className="text-gray-400 text-base">OTP Feed — coming soon</Text>
+    <View className="flex-1 bg-gray-50">
+      <View className="px-5 pt-12 pb-3">
+        <Text className="text-2xl font-bold text-gray-900">Live OTPs</Text>
+        <Text className="text-sm text-gray-400 mt-0.5">{group.name}</Text>
+      </View>
+
+      <FlatList
+        data={otps}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <OTPCard otp={item} onExpire={removeOTP} />
+        )}
+        contentContainerClassName="px-5 pb-8"
+        ListEmptyComponent={
+          <View className="items-center justify-center mt-24">
+            <Text className="text-5xl mb-4">🔐</Text>
+            <Text className="text-gray-400 text-base text-center">
+              Waiting for OTPs…{'\n'}They'll appear here instantly.
+            </Text>
+          </View>
+        }
+      />
     </View>
   );
 }
