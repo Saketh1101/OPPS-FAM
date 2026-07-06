@@ -1,5 +1,5 @@
 import { registerForPushNotificationsAsync, savePushToken } from '@/lib/notifications';
-import { getSMSPermissionStatus, requestSMSPermission } from '@/lib/smsService';
+import { clearActiveGroup, getSMSPermissionStatus, requestSMSPermission } from '@/lib/smsService';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/authStore';
 import { useGroupStore } from '@/store/groupStore';
@@ -56,6 +56,7 @@ export default function SettingsScreen() {
         style: 'destructive',
         onPress: async () => {
           await supabase.auth.signOut();
+          await clearActiveGroup();
           setGroup(null);
           setMembers([]);
           setOTPs([]);
