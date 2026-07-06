@@ -33,4 +33,6 @@ export interface OTP {
   // Decrypted locally, never stored
   otp_code?: string;
   sender_profile?: Profile;
+  // Display names of group members who have seen this OTP
+  viewers?: string[];
 }

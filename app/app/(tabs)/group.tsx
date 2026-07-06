@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
+  Share,
   Text,
   TouchableOpacity,
   View,
@@ -122,6 +123,16 @@ export default function GroupScreen() {
     );
   };
 
+  const handleShareInvite = async () => {
+    if (!group) return;
+    await Share.share({
+      message:
+        `Join my family group "${group.name}" on OTPShare!\n\n` +
+        `Invite code: ${group.invite_code}\n\n` +
+        `Open the app and tap "Join with invite code", or tap: otpshare://join?code=${group.invite_code}`,
+    });
+  };
+
   const handleRemoveMember = (memberId: string, name: string) => {
     Alert.alert('Remove member', `Remove ${name} from this group?`, [
       { text: 'Cancel', style: 'cancel' },
@@ -179,6 +190,9 @@ export default function GroupScreen() {
         <Text className="font-mono text-base font-semibold text-blue-600 tracking-widest mr-3">
           {group.invite_code}
         </Text>
+        <TouchableOpacity className="mr-3" onPress={handleShareInvite}>
+          <Text className="text-xs text-blue-600 underline">Share</Text>
+        </TouchableOpacity>
         {isAdmin && (
           <TouchableOpacity onPress={handleRegenerateCode} disabled={regenerating}>
             <Text className="text-xs text-gray-400 underline">

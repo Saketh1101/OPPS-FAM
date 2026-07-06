@@ -67,7 +67,20 @@ export default function FeedScreen() {
         sender_profile: row.profiles,
       }))
     );
-    setOTPs(enriched);
+
+    // Attach who has already seen each OTP
+    const { data: views } = await supabase
+      .from('otp_views')
+      .select('otp_id, profiles:viewer_id(display_name, phone)')
+      .in('otp_id', enriched.map((o) => o.id));
+
+    const viewersByOtp = new Map<string, string[]>();
+    for (const v of (views ?? []) as any[]) {
+      const name = v.profiles?.display_name ?? v.profiles?.phone ?? 'Someone';
+      viewersByOtp.set(v.otp_id, [...(viewersByOtp.get(v.otp_id) ?? []), name]);
+    }
+
+    setOTPs(enriched.map((o) => ({ ...o, viewers: viewersByOtp.get(o.id) ?? [] })));
 
     // Log views for loaded OTPs
     if (session) {

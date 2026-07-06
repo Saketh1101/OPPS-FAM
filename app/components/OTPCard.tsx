@@ -73,10 +73,15 @@ export default function OTPCard({ otp, onExpire }: OTPCardProps) {
         </TouchableOpacity>
       </View>
 
-      {/* Time received */}
-      <Text className="text-xs text-gray-300 mt-2 text-right">
-        {new Date(otp.received_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-      </Text>
+      {/* Seen by + time received */}
+      <View className="flex-row justify-between items-center mt-2">
+        <Text className="text-xs text-gray-300 flex-1 mr-2" numberOfLines={1}>
+          {otp.viewers && otp.viewers.length > 0 ? `Seen by ${otp.viewers.join(', ')}` : ''}
+        </Text>
+        <Text className="text-xs text-gray-300">
+          {new Date(otp.received_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </Text>
+      </View>
     </View>
   );
 }
