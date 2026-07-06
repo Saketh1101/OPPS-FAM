@@ -12,11 +12,24 @@ import {
   View,
 } from 'react-native';
 
+const INVITE_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous 0/O/1/I
+
+function generateInviteCode(): string {
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += INVITE_CODE_CHARS[Math.floor(Math.random() * INVITE_CODE_CHARS.length)];
+  }
+  return code;
+}
+
 export default function GroupScreen() {
   const { session } = useAuthStore();
   const { group, members, setGroup, setMembers } = useGroupStore();
   const [loading, setLoading] = useState(true);
+  const [regenerating, setRegenerating] = useState(false);
   const router = useRouter();
+
+  const isAdmin = members.some((m) => m.user_id === session?.user.id && m.role === 'admin');
 
   useEffect(() => {
     loadGroup();
@@ -75,6 +88,58 @@ export default function GroupScreen() {
     ]);
   };
 
+  const handleRegenerateCode = () => {
+    Alert.alert(
+      'Regenerate invite code',
+      'The old code will stop working immediately.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Regenerate',
+          onPress: async () => {
+            setRegenerating(true);
+            // Retry on the rare collision with an existing code (unique constraint).
+            for (let attempt = 0; attempt < 3; attempt++) {
+              const { data, error } = await supabase
+                .from('groups')
+                .update({ invite_code: generateInviteCode() })
+                .eq('id', group!.id)
+                .select()
+                .single();
+
+              if (!error && data) {
+                setGroup(data);
+                break;
+              }
+              if (attempt === 2) {
+                Alert.alert('Error', error?.message ?? 'Could not regenerate invite code.');
+              }
+            }
+            setRegenerating(false);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleRemoveMember = (memberId: string, name: string) => {
+    Alert.alert('Remove member', `Remove ${name} from this group?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          const { error } = await supabase.from('group_members').delete().eq('id', memberId);
+          if (error) {
+            Alert.alert('Error', error.message);
+            return;
+          }
+          setMembers(members.filter((m) => m.id !== memberId));
+        },
+      },
+    ]);
+  };
+
   if (loading) {
     return (
       <View className="flex-1 items-center justify-center bg-white">
@@ -111,9 +176,16 @@ export default function GroupScreen() {
       <Text className="text-2xl font-bold text-gray-900 mb-1">{group.name}</Text>
       <View className="flex-row items-center mb-8">
         <Text className="text-gray-500 text-sm mr-2">Invite code:</Text>
-        <Text className="font-mono text-base font-semibold text-blue-600 tracking-widest">
+        <Text className="font-mono text-base font-semibold text-blue-600 tracking-widest mr-3">
           {group.invite_code}
         </Text>
+        {isAdmin && (
+          <TouchableOpacity onPress={handleRegenerateCode} disabled={regenerating}>
+            <Text className="text-xs text-gray-400 underline">
+              {regenerating ? 'Regenerating…' : 'Regenerate'}
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <Text className="text-xs font-semibold uppercase text-gray-400 mb-3 tracking-wide">
@@ -139,7 +211,12 @@ export default function GroupScreen() {
             )}
           </View>
           {m.role === 'admin' && (
-            <Text className="text-xs text-blue-500 font-medium">Admin</Text>
+            <Text className="text-xs text-blue-500 font-medium mr-2">Admin</Text>
+          )}
+          {isAdmin && m.user_id !== session?.user.id && (
+            <TouchableOpacity onPress={() => handleRemoveMember(m.id, m.profiles.display_name ?? m.profiles.phone ?? 'this member')}>
+              <Text className="text-xs text-red-500 font-medium">Remove</Text>
+            </TouchableOpacity>
           )}
         </View>
       ))}

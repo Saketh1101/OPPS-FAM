@@ -89,11 +89,24 @@ create table public.otp_views (
 
 -- ============================================================
 -- AUTO-DELETE EXPIRED OTPS
--- Requires pg_cron extension (free on Supabase)
--- Enable via: Dashboard → Database → Extensions → pg_cron
+-- Requires pg_cron extension (free on Supabase).
+-- If "create extension" below errors on your project, enable it
+-- manually via: Dashboard → Database → Extensions → pg_cron, then
+-- re-run just the DO block and cron.schedule call.
 -- ============================================================
--- select cron.schedule(
---   'delete-expired-otps',
---   '* * * * *',   -- every minute
---   $$ delete from public.otps where expires_at < now() $$
--- );
+create extension if not exists pg_cron;
+
+-- Idempotent: drop any existing job with the same name before scheduling,
+-- so this file is safe to re-run.
+do $$
+begin
+  if exists (select 1 from cron.job where jobname = 'delete-expired-otps') then
+    perform cron.unschedule('delete-expired-otps');
+  end if;
+end $$;
+
+select cron.schedule(
+  'delete-expired-otps',
+  '* * * * *',   -- every minute
+  $$ delete from public.otps where expires_at < now() $$
+);

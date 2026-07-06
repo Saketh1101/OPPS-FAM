@@ -1,3 +1,4 @@
+import AddOTPModal from '@/components/AddOTPModal';
 import OTPCard from '@/components/OTPCard';
 import { decryptOTP } from '@/lib/crypto';
 import { requestSMSPermission, startSMSListener, stopSMSListener } from '@/lib/smsService';
@@ -6,12 +7,12 @@ import { OTP } from '@/lib/types';
 import { useAuthStore } from '@/store/authStore';
 import { useGroupStore } from '@/store/groupStore';
 import { useOTPStore } from '@/store/otpStore';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   Platform,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 
@@ -20,6 +21,7 @@ export default function FeedScreen() {
   const { group } = useGroupStore();
   const { otps, addOTP, removeOTP, setOTPs } = useOTPStore();
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const [addModalVisible, setAddModalVisible] = useState(false);
 
   useEffect(() => {
     if (!group) return;
@@ -125,9 +127,19 @@ export default function FeedScreen() {
 
   return (
     <View className="flex-1 bg-gray-50">
-      <View className="px-5 pt-12 pb-3">
-        <Text className="text-2xl font-bold text-gray-900">Live OTPs</Text>
-        <Text className="text-sm text-gray-400 mt-0.5">{group.name}</Text>
+      <View className="px-5 pt-12 pb-3 flex-row items-start justify-between">
+        <View>
+          <Text className="text-2xl font-bold text-gray-900">Live OTPs</Text>
+          <Text className="text-sm text-gray-400 mt-0.5">{group.name}</Text>
+        </View>
+        {Platform.OS === 'ios' && (
+          <TouchableOpacity
+            className="bg-blue-600 rounded-full px-4 py-2 mt-1"
+            onPress={() => setAddModalVisible(true)}
+          >
+            <Text className="text-white font-semibold text-sm">+ Add OTP</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <FlatList
@@ -146,6 +158,15 @@ export default function FeedScreen() {
           </View>
         }
       />
+
+      {session && (
+        <AddOTPModal
+          visible={addModalVisible}
+          groupId={group.id}
+          userId={session.user.id}
+          onClose={() => setAddModalVisible(false)}
+        />
+      )}
     </View>
   );
 }
