@@ -88,6 +88,22 @@ create table public.otp_views (
 );
 
 -- ============================================================
+-- JOIN ATTEMPTS
+-- Written only by the join-group edge function (service role) to
+-- rate-limit invite-code guessing. RLS enabled with no policies so
+-- clients can neither read nor tamper with it.
+-- ============================================================
+create table public.join_attempts (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  attempted_at timestamptz default now()
+);
+
+create index join_attempts_user_idx on public.join_attempts(user_id, attempted_at desc);
+
+alter table public.join_attempts enable row level security;
+
+-- ============================================================
 -- AUTO-DELETE EXPIRED OTPS
 -- Requires pg_cron extension (free on Supabase).
 -- If "create extension" below errors on your project, enable it

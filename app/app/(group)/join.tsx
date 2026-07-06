@@ -1,7 +1,6 @@
 import { supabase } from '@/lib/supabase';
-import { useAuthStore } from '@/store/authStore';
 import { useGroupStore } from '@/store/groupStore';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -14,9 +13,10 @@ import {
 } from 'react-native';
 
 export default function JoinGroupScreen() {
-  const [code, setCode] = useState('');
+  // Prefilled when opened via an invite deep link: otpshare://join?code=ABC123
+  const { code: linkCode } = useLocalSearchParams<{ code?: string }>();
+  const [code, setCode] = useState((linkCode ?? '').toUpperCase().slice(0, 6));
   const [loading, setLoading] = useState(false);
-  const { session } = useAuthStore();
   const { setGroup, setMembers } = useGroupStore();
   const router = useRouter();
 
@@ -28,58 +28,31 @@ export default function JoinGroupScreen() {
     }
 
     setLoading(true);
-    const userId = session!.user.id;
 
-    // Look up group by invite code
-    const { data: group, error: groupError } = await supabase
-      .from('groups')
-      .select('*')
-      .eq('invite_code', trimmed)
-      .single();
+    // The join runs server-side: RLS hides groups from non-members, and the
+    // edge function also rate-limits invite-code guessing.
+    const { data, error } = await supabase.functions.invoke('join-group', {
+      body: { code: trimmed },
+    });
 
-    if (groupError || !group) {
-      Alert.alert('Invalid code', 'No group found with that invite code.');
+    if (error || data?.error) {
+      let message = data?.error ?? 'Could not join the group. Try again.';
+      if (error) {
+        try {
+          const body = await (error as any).context?.json?.();
+          if (body?.error) message = body.error;
+        } catch {
+          // keep default message
+        }
+      }
+      Alert.alert('Could not join', message);
       setLoading(false);
       return;
     }
 
-    // Check member count (max 6)
-    const { count } = await supabase
-      .from('group_members')
-      .select('*', { count: 'exact', head: true })
-      .eq('group_id', group.id);
+    const group = data.group;
 
-    if ((count ?? 0) >= 6) {
-      Alert.alert('Group full', 'This group already has 6 members.');
-      setLoading(false);
-      return;
-    }
-
-    // Check not already a member
-    const { data: existing } = await supabase
-      .from('group_members')
-      .select('id')
-      .eq('group_id', group.id)
-      .eq('user_id', userId)
-      .single();
-
-    if (existing) {
-      Alert.alert('Already a member', 'You are already in this group.');
-      setLoading(false);
-      return;
-    }
-
-    // Join
-    const { error: joinError } = await supabase
-      .from('group_members')
-      .insert({ group_id: group.id, user_id: userId, role: 'member' });
-
-    if (joinError) {
-      Alert.alert('Error', joinError.message);
-      setLoading(false);
-      return;
-    }
-
+    // Now that we're a member, RLS lets us read the member list
     const { data: members } = await supabase
       .from('group_members')
       .select('*, profiles(*)')

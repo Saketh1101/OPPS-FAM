@@ -1,7 +1,7 @@
 import AddOTPModal from '@/components/AddOTPModal';
 import OTPCard from '@/components/OTPCard';
 import { decryptOTP } from '@/lib/crypto';
-import { requestSMSPermission, startSMSListener, stopSMSListener } from '@/lib/smsService';
+import { requestSMSPermission, setActiveGroup } from '@/lib/smsService';
 import { supabase } from '@/lib/supabase';
 import { OTP } from '@/lib/types';
 import { useAuthStore } from '@/store/authStore';
@@ -27,18 +27,21 @@ export default function FeedScreen() {
     if (!group) return;
     loadInitialOTPs();
     subscribeToOTPs();
-    setupSMSListener();
+    setupBackgroundForwarding();
     return () => {
       channelRef.current?.unsubscribe();
-      stopSMSListener();
     };
   }, [group?.id]);
 
-  const setupSMSListener = async () => {
+  // Grants SMS access and records which group/user the native background
+  // listener should forward to. The listener keeps running via a foreground
+  // service even after this screen unmounts or the app is closed, so there is
+  // nothing to tear down here — it is cleared on logout instead.
+  const setupBackgroundForwarding = async () => {
     if (Platform.OS !== 'android' || !session) return;
     const granted = await requestSMSPermission();
     if (!granted) return;
-    startSMSListener({ groupId: group!.id, userId: session.user.id });
+    await setActiveGroup(group!.id, session.user.id);
   };
 
   const decryptAndEnrich = async (raw: any): Promise<OTP> => {
@@ -64,7 +67,20 @@ export default function FeedScreen() {
         sender_profile: row.profiles,
       }))
     );
-    setOTPs(enriched);
+
+    // Attach who has already seen each OTP
+    const { data: views } = await supabase
+      .from('otp_views')
+      .select('otp_id, profiles:viewer_id(display_name, phone)')
+      .in('otp_id', enriched.map((o) => o.id));
+
+    const viewersByOtp = new Map<string, string[]>();
+    for (const v of (views ?? []) as any[]) {
+      const name = v.profiles?.display_name ?? v.profiles?.phone ?? 'Someone';
+      viewersByOtp.set(v.otp_id, [...(viewersByOtp.get(v.otp_id) ?? []), name]);
+    }
+
+    setOTPs(enriched.map((o) => ({ ...o, viewers: viewersByOtp.get(o.id) ?? [] })));
 
     // Log views for loaded OTPs
     if (session) {

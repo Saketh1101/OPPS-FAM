@@ -20,7 +20,11 @@
       "package": "com.otpshare.app",
       "permissions": [
         "android.permission.RECEIVE_SMS",
-        "android.permission.READ_SMS"
+        "android.permission.READ_SMS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
+        "android.permission.WAKE_LOCK",
+        "android.permission.POST_NOTIFICATIONS"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
@@ -36,7 +40,8 @@
     "plugins": [
       "expo-router",
       "expo-notifications",
-      "expo-build-properties"
+      "expo-build-properties",
+      "./plugins/withSmsForwarder"
     ]
   }
 }

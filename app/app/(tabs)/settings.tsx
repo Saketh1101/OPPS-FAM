@@ -1,5 +1,5 @@
 import { registerForPushNotificationsAsync, savePushToken } from '@/lib/notifications';
-import { getSMSPermissionStatus, requestSMSPermission } from '@/lib/smsService';
+import { clearActiveGroup, getSMSPermissionStatus, requestSMSPermission } from '@/lib/smsService';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/authStore';
 import { useGroupStore } from '@/store/groupStore';
@@ -8,7 +8,15 @@ import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Alert, Platform, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import {
+  Alert,
+  Platform,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
 export default function SettingsScreen() {
   const { session } = useAuthStore();
@@ -16,12 +24,41 @@ export default function SettingsScreen() {
   const { setOTPs } = useOTPStore();
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [smsEnabled, setSmsEnabled] = useState(false);
+  const [displayName, setDisplayName] = useState('');
+  const [savingName, setSavingName] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
       refreshPermissionStatus();
+      loadProfile();
     }, [])
   );
+
+  const loadProfile = async () => {
+    if (!session) return;
+    const { data } = await supabase
+      .from('profiles')
+      .select('display_name')
+      .eq('id', session.user.id)
+      .single();
+    if (data?.display_name) setDisplayName(data.display_name);
+  };
+
+  const handleSaveName = async () => {
+    const trimmed = displayName.trim();
+    if (!session || trimmed.length < 1) return;
+    setSavingName(true);
+    const { error } = await supabase
+      .from('profiles')
+      .update({ display_name: trimmed })
+      .eq('id', session.user.id);
+    setSavingName(false);
+    if (error) {
+      Alert.alert('Error', error.message);
+      return;
+    }
+    Alert.alert('Saved', 'Your display name has been updated.');
+  };
 
   const refreshPermissionStatus = async () => {
     const { status } = await Notifications.getPermissionsAsync();
@@ -56,6 +93,7 @@ export default function SettingsScreen() {
         style: 'destructive',
         onPress: async () => {
           await supabase.auth.signOut();
+          await clearActiveGroup();
           setGroup(null);
           setMembers([]);
           setOTPs([]);
@@ -71,8 +109,35 @@ export default function SettingsScreen() {
       <Text className="text-xs font-semibold uppercase text-gray-400 mb-3 tracking-wide">
         Account
       </Text>
-      <View className="bg-white rounded-xl px-4 py-3 mb-8 shadow-sm">
-        <Text className="text-gray-800 font-medium">{session?.user.phone ?? 'Unknown'}</Text>
+      <View className="bg-white rounded-xl mb-8 shadow-sm overflow-hidden">
+        <View className="px-4 py-3 border-b border-gray-100">
+          <Text className="text-xs text-gray-400 mb-0.5">Phone</Text>
+          <Text className="text-gray-800 font-medium">{session?.user.phone ?? 'Unknown'}</Text>
+        </View>
+        <View className="px-4 py-3">
+          <Text className="text-xs text-gray-400 mb-1">Display name</Text>
+          <View className="flex-row items-center">
+            <TextInput
+              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-base text-gray-900 mr-2"
+              placeholder="e.g. Amma"
+              maxLength={30}
+              value={displayName}
+              onChangeText={setDisplayName}
+            />
+            <TouchableOpacity
+              className="bg-blue-600 rounded-lg px-3 py-2"
+              onPress={handleSaveName}
+              disabled={savingName || displayName.trim().length < 1}
+            >
+              <Text className="text-white text-sm font-semibold">
+                {savingName ? 'Saving…' : 'Save'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          <Text className="text-xs text-gray-400 mt-1.5">
+            Shown to your group instead of your phone number.
+          </Text>
+        </View>
       </View>
 
       <Text className="text-xs font-semibold uppercase text-gray-400 mb-3 tracking-wide">
